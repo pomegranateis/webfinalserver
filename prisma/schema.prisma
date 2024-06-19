@@ -1,58 +1,50 @@
+datasource db {
+  provider = "sqlite" // or your database provider
+  url      = "file:./dev.db"
+}
+
 generator client {
   provider = "prisma-client-js"
 }
 
-datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
-}
-
 model User {
-  id             Int      @id @default(autoincrement())
-  username       String?  @unique
-  bio            String?
-  name           String?
-  followedBy     Follows[] @relation("followers")
-  following      Follows[] @relation("following")
-  Post           Post[]
-  email          String   @unique
+  id             Int       @id @default(autoincrement())
+  email          String    @unique
   hashedPassword String
-  Account        Account[]
+  username       String    @unique
+  fullName       String
+  bio            String? // Optional bio field
+  following      Follows[] @relation("following")
+  followedBy     Follows[] @relation("followedBy")
+  posts          Post[]
+  comments       Comment[] // Add this line to create the relation
 }
 
 model Post {
   id        Int       @id @default(autoincrement())
-  slug      String    @unique
-  title     String
-  body      String
-  author    User      @relation(fields: [authorId], references: [id])
-  authorId  Int
-  comments  Comment[]
-  likes     Int       @default(0)
   createdAt DateTime  @default(now())
+  content   String
+  likes     Int       @default(0)
+  comments  Comment[]
+  authorId  Int
+  author    User      @relation(fields: [authorId], references: [id])
 }
 
 model Comment {
-  id        Int       @id @default(autoincrement())
-  comment   String
-  post      Post      @relation(fields: [postId], references: [id])
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  content   String
   postId    Int
-  createdAt DateTime  @default(now())
-}
-
-model Account {
-  id      Int    @id @default(autoincrement())
-  userId  Int
-  user    User   @relation(fields: [userId], references: [id])
-  balance Int    @default(0)
+  post      Post     @relation(fields: [postId], references: [id])
+  authorId  Int
+  author    User     @relation(fields: [authorId], references: [id])
 }
 
 model Follows {
-  id         Int   @id @default(autoincrement())
-  followerId Int
+  followerId  Int
   followingId Int
-  follower   User  @relation("followers", fields: [followerId], references: [id])
-  following  User  @relation("following", fields: [followingId], references: [id])
+  follower    User @relation("following", fields: [followerId], references: [id])
+  following   User @relation("followedBy", fields: [followingId], references: [id])
 
-  @@unique([followerId, followingId])
+  @@id([followerId, followingId])
 }

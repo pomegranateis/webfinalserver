@@ -2,16 +2,13 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
-import { decode, sign, verify } from "hono/jwt";
+import { sign } from "hono/jwt";
 import { jwt } from "hono/jwt";
-import type { JwtVariables } from "hono/jwt";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 
 const app = new Hono();
 const prisma = new PrismaClient();
-
-type Variables = JwtVariables;
 
 app.use("/*", cors());
 
@@ -22,7 +19,7 @@ app.use(
   })
 );
 
-// registration route
+// Registration route
 app.post("/signup", async (c) => {
   try {
     const body = await c.req.json();
@@ -33,6 +30,8 @@ app.post("/signup", async (c) => {
       data: {
         email: body.email,
         hashedPassword: bcryptHash,
+        username: body.username,
+        fullName: body.fullName,
       },
     });
 
@@ -41,15 +40,15 @@ app.post("/signup", async (c) => {
     console.error("Error occurred during user registration:", error);
 
     if (error instanceof Error && (error as any).code === "P2002") {
-      return c.json({ message: "Email already exists" });
+      return c.json({ message: "Email or username already exists" }, 409); // 409 Conflict
     } else {
-      return c.json({ message: "Internal server error" });
+      return c.json({ message: "Internal server error" }, 500); // 500 Internal Server Error
     }
   }
 });
 
-// login route
-app.post("/auth", async (c) => {
+// Login route
+app.post("/auth/login", async (c) => {
   try {
     const body = await c.req.json();
     const user = await prisma.user.findUnique({
@@ -58,7 +57,7 @@ app.post("/auth", async (c) => {
     });
 
     if (!user) {
-      return c.json({ message: "User not found" });
+      return c.json({ message: "User not found" }, 404); // 404 Not Found
     }
 
     const match = await bcrypt.compare(body.password, user.hashedPassword);
@@ -71,14 +70,14 @@ app.post("/auth", async (c) => {
       const token = await sign(payload, secret);
       return c.json({ message: "Login successful", token: token });
     } else {
-      throw new HTTPException(401, { message: "Invalid credentials" });
+      throw new HTTPException(401, { message: "Invalid credentials" }); // 401 Unauthorized
     }
   } catch (error) {
-    throw new HTTPException(401, { message: "Invalid credentials" });
+    throw new HTTPException(401, { message: "Invalid credentials" }); // 401 Unauthorized
   }
 });
 
-// this is for latest post to be at top
+// Latest post at top
 app.get("/feeds", async (c) => {
   const feeds = await prisma.post.findMany({
     orderBy: {
@@ -88,7 +87,7 @@ app.get("/feeds", async (c) => {
   return c.json(feeds);
 });
 
-// like count
+// Like count
 app.post("/feeds/post/:id/like", async (c) => {
   const { id } = c.req.param();
   const post = await prisma.post.update({
@@ -102,7 +101,7 @@ app.post("/feeds/post/:id/like", async (c) => {
   return c.json(post);
 });
 
-// comment
+// Comments
 app.get("/feeds/post/:id/comments", async (c) => {
   const { id } = c.req.param();
   const comments = await prisma.comment.findMany({
@@ -116,7 +115,7 @@ app.get("/feeds/post/:id/comments", async (c) => {
   return c.json(comments);
 });
 
-// endpoint for profile
+// Profile
 app.get("/profile/:username", async (c) => {
   const { username } = c.req.param();
   const profile = await prisma.user.findUnique({
@@ -126,13 +125,13 @@ app.get("/profile/:username", async (c) => {
     select: {
       username: true,
       bio: true,
-      Post: true,
+      posts: true,
     },
   });
   return c.json(profile);
 });
 
-// endpoint for followers on profile
+// Followers
 app.get("/profile/:username/followers", async (c) => {
   const { username } = c.req.param();
   const followers = await prisma.user.findMany({
@@ -149,7 +148,7 @@ app.get("/profile/:username/followers", async (c) => {
   return c.json(followers);
 });
 
-// endpoint for following on profile
+// Following
 app.get("/profile/:username/following", async (c) => {
   const { username } = c.req.param();
   const following = await prisma.user.findMany({
@@ -166,7 +165,7 @@ app.get("/profile/:username/following", async (c) => {
   return c.json(following);
 });
 
-// endpoint for viewing information on profile
+// View profile information
 app.get("/profile/:username/editpf", async (c) => {
   const { username } = c.req.param();
   const user = await prisma.user.findUnique({
@@ -181,7 +180,7 @@ app.get("/profile/:username/editpf", async (c) => {
   return c.json(user);
 });
 
-// endpoint for editing information on profile
+// Edit profile information
 app.patch("/profile/:username/editpf", async (c) => {
   const { username } = c.req.param();
   const body = await c.req.json();

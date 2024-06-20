@@ -194,10 +194,12 @@ app.patch("/profile/:username/editpf", async (c) => {
 });
 
 // Search function
-app.get('/search/:username', async (c) => {
+app.get('NavBar/search/:username', async (c) => {
   const { username } = c.req.param();
 
   try {
+    console.log(`Searching for user with username: ${username}`);
+
     const user = await prisma.user.findUnique({
       where: {
         username: username,
@@ -211,12 +213,14 @@ app.get('/search/:username', async (c) => {
     });
 
     if (!user) {
+      console.log('User not found');
       return c.json({ message: 'User not found' }, 404); // 404 Not Found
     }
 
+    console.log('User found', user);
     return c.json(user);
   } catch (error) {
-    console.error(error);
+    console.error('Error fetching user', error);
     return c.json({ error: 'An error occurred while fetching the user' }, 500); // 500 Internal Server Error
   }
 });

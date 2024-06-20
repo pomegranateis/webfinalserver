@@ -79,12 +79,16 @@ app.post("/auth/login", async (c) => {
 
 // Latest post at top
 app.get("/feeds", async (c) => {
-  const feeds = await prisma.post.findMany({
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
-  return c.json(feeds);
+  try {
+    const feeds = await prisma.post.findMany({
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+    return c.json(feeds);
+  } catch (error) {
+    console.error("Error getting the posts", error);
+  }
 });
 
 // Like count
@@ -104,80 +108,106 @@ app.post("/feeds/post/:id/like", async (c) => {
 // Comments
 app.get("/feeds/post/:id/comments", async (c) => {
   const { id } = c.req.param();
-  const comments = await prisma.comment.findMany({
-    where: {
-      postId: Number(id),
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
-  return c.json(comments);
+  try {
+    const comments = await prisma.comment.findMany({
+      where: {
+        postId: Number(id),
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+    return c.json(comments);
+  } catch (error) {
+    console.error("Error getting the comments", error);
+  }
 });
 
 // Profile
 app.get("/profile/:username", async (c) => {
   const { username } = c.req.param();
-  const profile = await prisma.user.findUnique({
-    where: {
-      username,
-    },
-    select: {
-      username: true,
-      bio: true,
-      posts: true,
-    },
-  });
-  return c.json(profile);
+  try {
+    const profile = await prisma.user.findUnique({
+      where: {
+        username,
+      },
+      select: {
+        username: true,
+        bio: true,
+        posts: true,
+        followedBy: true,
+        following: true,
+      },
+    });
+    return c.json(profile);
+    
+  } catch (error) {
+    console.error("Couldn't load the user profile", error);
+  }
+
 });
 
 // Followers
 app.get("/profile/:username/followers", async (c) => {
   const { username } = c.req.param();
-  const followers = await prisma.user.findMany({
-    where: {
-      following: {
-        some: {
-          follower: {
-            username: username,
+  try {
+    const followers = await prisma.user.findMany({
+      where: {
+        following: {
+          some: {
+            follower: {
+              username: username,
+            },
           },
         },
       },
-    },
-  });
-  return c.json(followers);
+    });
+    return c.json(followers);
+  } catch (error) {
+    console.error("Error occurred during user registration:", error);
+  }
+ 
 });
 
 // Following
 app.get("/profile/:username/following", async (c) => {
   const { username } = c.req.param();
-  const following = await prisma.user.findMany({
-    where: {
-      followedBy: {
-        some: {
-          following: {
-            username: username,
+  try {
+    const following = await prisma.user.findMany({
+      where: {
+        followedBy: {
+          some: {
+            following: {
+              username: username,
+            },
           },
         },
       },
-    },
-  });
-  return c.json(following);
+    });
+    return c.json(following);  
+  } catch (error) {
+    console.error("Error getting the user followers", error);
+  }
 });
 
 // View profile information
 app.get("/profile/:username/editpf", async (c) => {
   const { username } = c.req.param();
-  const user = await prisma.user.findUnique({
-    where: {
-      username,
-    },
-    select: {
-      username: true,
-      bio: true,
-    },
-  });
-  return c.json(user);
+  try {
+    const user = await prisma.user.findUnique({
+      where: {
+        username,
+      },
+      select: {
+        username: true,
+        bio: true,
+      },
+    });
+    return c.json(user);
+  } catch (error) {
+    console.error("Error loading the page. Try again", error);
+  }
+  
 });
 
 // Edit profile information

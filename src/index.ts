@@ -193,6 +193,34 @@ app.patch("/profile/:username/editpf", async (c) => {
   return c.json(updatedProfile);
 });
 
+// Search function
+app.get('/search/:username', async (c) => {
+  const { username } = c.req.param();
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: {
+        username: username,
+      },
+      include: {
+        posts: true,
+        comments: true,
+        following: true,
+        followedBy: true,
+      },
+    });
+
+    if (!user) {
+      return c.json({ message: 'User not found' }, 404); // 404 Not Found
+    }
+
+    return c.json(user);
+  } catch (error) {
+    console.error(error);
+    return c.json({ error: 'An error occurred while fetching the user' }, 500); // 500 Internal Server Error
+  }
+});
+
 const port = 3000;
 console.log(`Server is running on port ${port}`);
 

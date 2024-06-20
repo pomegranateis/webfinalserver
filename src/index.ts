@@ -188,7 +188,10 @@ app.patch("/profile/:username/editpf", async (c) => {
     where: {
       username,
     },
-    data: body,
+    data: {
+      bio: body.bio,
+      username: body.username,
+    }  
   });
   return c.json(updatedProfile);
 });

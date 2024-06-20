@@ -7,10 +7,12 @@
     "@hono/node-server": "^1.11.3",
     "@prisma/client": "^5.15.1",
     "bcrypt": "^5.1.1",
-    "hono": "^4.4.7"
+    "hono": "^4.4.7",
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
+    "@types/jsonwebtoken": "^9.0.6",
     "@types/node": "^20.14.6",
     "prisma": "^5.15.1",
     "ts-node": "^10.9.2",

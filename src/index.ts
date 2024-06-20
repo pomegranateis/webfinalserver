@@ -1,30 +1,39 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { HTTPException } from "hono/http-exception";
-import { sign } from "hono/jwt";
-import { jwt } from "hono/jwt";
+import { sign, verify } from "jsonwebtoken";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 
 const app = new Hono();
 const prisma = new PrismaClient();
+const secret = "mySecretKey"; // JWT secret key
 
+// Middleware to enable CORS
 app.use("/*", cors());
 
-app.use(
-  "/protected/*",
-  jwt({
-    secret: "mySecretKey",
-  })
-);
+// Middleware to authenticate JWT token
+const authenticateToken = async (c: any, next: any) => {
+  const authHeader = c.req.headers.get("Authorization");
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) return c.json({ message: "Unauthorized" }, 401);
+
+  try {
+    const user = await verify(token, secret);
+    c.req.user = user;
+    await next();
+  } catch (error) {
+    return c.json({ message: "Forbidden" }, 403);
+  }
+};
 
 // Registration route
 app.post("/signup", async (c) => {
   try {
     const body = await c.req.json();
 
-    const bcryptHash = await bcrypt.hash(body.password, 10); // Using bcrypt with a cost factor of 10
+    const bcryptHash = await bcrypt.hash(body.password, 10);
 
     const user = await prisma.user.create({
       data: {
@@ -36,77 +45,95 @@ app.post("/signup", async (c) => {
     });
 
     return c.json({ message: "User registered successfully" });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error occurred during user registration:", error);
 
-    if (error instanceof Error && (error as any).code === "P2002") {
-      return c.json({ message: "Email or username already exists" }, 409); // 409 Conflict
+    if (error.code === "P2002") {
+      return c.json({ message: "Email or username already exists" }, 409);
     } else {
-      return c.json({ message: "Internal server error" }, 500); // 500 Internal Server Error
+      return c.json({ message: "Internal server error" }, 500);
     }
   }
 });
 
-// Login route
+// Login endpoint
 app.post("/auth/login", async (c) => {
   try {
-    const body = await c.req.json();
+    const { email, password } = await c.req.json();
     const user = await prisma.user.findUnique({
-      where: { email: body.email },
-      select: { id: true, hashedPassword: true },
+      where: { email },
+      select: { id: true, username: true, hashedPassword: true },
     });
 
     if (!user) {
-      return c.json({ message: "User not found" }, 404); // 404 Not Found
+      return c.json({ message: "User not found" }, 404);
     }
 
-    const match = await bcrypt.compare(body.password, user.hashedPassword);
+    const match = await bcrypt.compare(password, user.hashedPassword);
     if (match) {
       const payload = {
         sub: user.id,
-        exp: Math.floor(Date.now() / 1000) + 60 * 60, // Token expires in 60 minutes
+        username: user.username,
+        exp: Math.floor(Date.now() / 1000) + 60 * 60,
       };
-      const secret = "mySecretKey";
-      const token = await sign(payload, secret);
-      return c.json({ message: "Login successful", token: token });
+      const token = sign(payload, secret);
+      return c.json({
+        message: "Login successful",
+        token,
+        username: user.username,
+      });
     } else {
-      throw new HTTPException(401, { message: "Invalid credentials" }); // 401 Unauthorized
+      return c.json({ message: "Invalid credentials" }, 401);
     }
   } catch (error) {
-    throw new HTTPException(401, { message: "Invalid credentials" }); // 401 Unauthorized
+    console.error("Error during login:", error);
+    return c.json({ message: "Login failed" }, 401);
   }
 });
 
-// Latest post at top
-app.get("/feeds", async (c) => {
+// Feed endpoint
+app.get("/api/feed", authenticateToken, async (c) => {
   try {
-    const feeds = await prisma.post.findMany({
+    const feedData = await prisma.post.findMany({
       orderBy: {
         createdAt: "desc",
       },
+      include: {
+        author: true,
+      },
     });
-    return c.json(feeds);
+    return c.json(feedData);
   } catch (error) {
-    console.error("Error getting the posts", error);
+    console.error("Error fetching feed:", error);
+    return c.json({ message: "Failed to fetch feed" }, 500);
   }
 });
 
-// Like count
-app.post("/feeds/post/:id/like", async (c) => {
+// Like count endpoint
+app.post("/post/:id/like", async (c) => {
   const { id } = c.req.param();
-  const post = await prisma.post.update({
-    where: { id: Number(id) },
-    data: {
-      likes: {
-        increment: 1,
+
+  try {
+    const postId = parseInt(id); // Convert id to a number if necessary
+
+    const post = await prisma.post.update({
+      where: { id: postId },
+      data: {
+        likes: {
+          increment: 1,
+        },
       },
-    },
-  });
-  return c.json(post);
+    });
+
+    return c.json(post); // Return the updated post in JSON format
+  } catch (error) {
+    console.error("Error liking post:", error);
+    return c.json({ error: "Could not like the post" }, 500);
+  }
 });
 
-// Comments
-app.get("/feeds/post/:id/comments", async (c) => {
+// Comments endpoint
+app.get("/feeds/post/:id/comments", authenticateToken, async (c) => {
   const { id } = c.req.param();
   try {
     const comments = await prisma.comment.findMany({
@@ -119,11 +146,12 @@ app.get("/feeds/post/:id/comments", async (c) => {
     });
     return c.json(comments);
   } catch (error) {
-    console.error("Error getting the comments", error);
+    console.error("Error fetching comments:", error);
+    return c.json({ message: "Failed to fetch comments" }, 500);
   }
 });
 
-// Profile
+// Profile endpoint
 app.get("/profile/:username", async (c) => {
   const { username } = c.req.param();
   try {
@@ -135,19 +163,16 @@ app.get("/profile/:username", async (c) => {
         username: true,
         bio: true,
         posts: true,
-        followedBy: true,
-        following: true,
       },
     });
     return c.json(profile);
-    
   } catch (error) {
-    console.error("Couldn't load the user profile", error);
+    console.error("Error fetching profile:", error);
+    return c.json({ message: "Failed to fetch profile" }, 500);
   }
-
 });
 
-// Followers
+// Followers endpoint
 app.get("/profile/:username/followers", async (c) => {
   const { username } = c.req.param();
   try {
@@ -164,12 +189,12 @@ app.get("/profile/:username/followers", async (c) => {
     });
     return c.json(followers);
   } catch (error) {
-    console.error("Error occurred during user registration:", error);
+    console.error("Error fetching followers:", error);
+    return c.json({ message: "Failed to fetch followers" }, 500);
   }
- 
 });
 
-// Following
+// Following endpoint
 app.get("/profile/:username/following", async (c) => {
   const { username } = c.req.param();
   try {
@@ -184,52 +209,56 @@ app.get("/profile/:username/following", async (c) => {
         },
       },
     });
-    return c.json(following);  
+    return c.json(following);
   } catch (error) {
-    console.error("Error getting the user followers", error);
+    console.error("Error fetching following:", error);
+    return c.json({ message: "Failed to fetch following" }, 500);
   }
 });
 
-// View profile information
-app.get("/profile/:username/editpf", async (c) => {
+// Edit profile information endpoint
+app.patch("/profile/:username/editpf", authenticateToken, async (c) => {
   const { username } = c.req.param();
   try {
-    const user = await prisma.user.findUnique({
+    const body = await c.req.json();
+    const updatedProfile = await prisma.user.update({
       where: {
         username,
       },
-      select: {
-        username: true,
-        bio: true,
+      data: body,
+    });
+    return c.json(updatedProfile);
+  } catch (error) {
+    console.error("Error updating profile:", error);
+    return c.json({ message: "Failed to update profile" }, 500);
+  }
+});
+
+// Create post endpoint
+app.post("/NavBar/create", async (c) => {
+  try {
+    const body = await c.req.json();
+
+    // Example: Assuming logged-in user's ID is passed in the body
+    const userId = body.userId;
+
+    const newPost = await prisma.post.create({
+      data: {
+        content: body.content, // Assuming your post has a 'content' field
+        author: { connect: { id: userId } }, // Connect post to the author
       },
     });
-    return c.json(user);
+
+    return c.json(newPost);
   } catch (error) {
-    console.error("Error loading the page. Try again", error);
+    console.error("Error creating post:", error);
+    return c.json({ error: "Could not create the post" }, 500);
   }
-  
 });
 
-// Edit profile information
-app.patch("/profile/:username/editpf", async (c) => {
+// Search username endpoint
+app.get("/NavBar/search/:username", async (c) => {
   const { username } = c.req.param();
-  const body = await c.req.json();
-  const updatedProfile = await prisma.user.update({
-    where: {
-      username,
-    },
-    data: {
-      bio: body.bio,
-      username: body.username,
-    }  
-  });
-  return c.json(updatedProfile);
-});
-
-// Search function
-app.get('NavBar/search/:username', async (c) => {
-  const { username } = c.req.param();
-
   try {
     console.log(`Searching for user with username: ${username}`);
 
@@ -246,15 +275,15 @@ app.get('NavBar/search/:username', async (c) => {
     });
 
     if (!user) {
-      console.log('User not found');
-      return c.json({ message: 'User not found' }, 404); // 404 Not Found
+      console.log("User not found");
+      return c.json({ message: "User not found" }, 404); // 404 Not Found
     }
 
-    console.log('User found', user);
+    console.log("User found", user);
     return c.json(user);
   } catch (error) {
-    console.error('Error fetching user', error);
-    return c.json({ error: 'An error occurred while fetching the user' }, 500); // 500 Internal Server Error
+    console.error("Error fetching user", error);
+    return c.json({ error: "An error occurred while fetching the user" }, 500); // 500 Internal Server Error
   }
 });
 

@@ -260,7 +260,7 @@ app.post("/NavBar/create", async (c) => {
 app.get("/NavBar/search/:username", async (c) => {
   const { username } = c.req.param();
   try {
-    console.log(`Searching for user with username: ${username}`);
+    // console.log(`Searching for user with username: ${username}`);
 
     const user = await prisma.user.findUnique({
       where: {

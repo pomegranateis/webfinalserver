@@ -133,7 +133,7 @@ app.post("/post/:id/like", async (c) => {
 });
 
 // Comments endpoint
-app.get("/feeds/post/:id/comments", authenticateToken, async (c) => {
+app.get("/Homepage/post/:id/comments", authenticateToken, async (c) => {
   const { id } = c.req.param();
   try {
     const comments = await prisma.comment.findMany({
